@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	
+	<flow name="getContactFlow" doc:id="7c104097-7f98-45f1-9161-2aea01dd8a4f" >
+		<salesforce:query doc:name="Get Contact" doc:id="44c36fec-a0f1-4428-907f-5fe8b39088ea" config-ref="Salesforce_Config1">
+			<salesforce:salesforce-query ><![CDATA[SELECT Id, FirstName, LastName,
+				MailingStreet, MailingCity, MailingPostalCode, MailingState,
+				MailingCountry, Phone, Email, Birthdate  FROM Contact WHERE Email = ':Email']]>
+				</salesforce:salesforce-query>
+				<salesforce:parameters><![CDATA[#[output application/java
+---
+{
+	"Email" : attributes.queryParams.email
+}]]]></salesforce:parameters>
+		</salesforce:query>
+		<choice doc:name="doesRecordExist?" doc:id="4aeb59d3-1a20-4cb2-b67f-241ad71fce3b" >
+			<when expression="#[sizeOf(payload) != 0]">
+				<ee:transform doc:name="Creating JSON response" doc:id="edfd5563-84e2-4514-b197-7dd3a291d03c" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{	
+	id : payload[0].Id,
+	first_name: payload[0].FirstName,
+	last_name: payload[0].LastName,
+	address: {
+		address_line_1: payload[0].MailingStreet,
+		city: payload[0].MailingCity,
+		zip_code: payload[0].MailingPostalCode,
+		state: payload[0].MailingState,
+		country: payload[0].MailingCountry
+	},
+	display_name: payload[0].FirstName! ++ " " ++ payload[0].LastName!,
+	phone: payload[0].Phone,
+	email: payload[0].Email,
+	date_of_birth: payload[0].Birthdate
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Create Error Response" doc:id="fdd047c1-99ae-456a-8c3a-495d2fecb88d" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  message: "Record does not exist"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+
+		
+
+	</flow>
+	<flow name="postContactFlow" doc:id="8077840b-1b3c-404f-8132-c6fcb586794e" >
+		<ee:transform doc:name="mapPayload" doc:id="7b15e20c-e6cf-4219-b680-bb1bde7b14ab" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+[{	
+	(FirstName: payload.first_name) if (not isEmpty(payload.first_name)),
+	(LastName: payload.last_name) if (not isEmpty(payload.last_name)),
+	(MailingStreet: payload.address.address_line_1) if (not isEmpty(payload.address.address_line_1)),
+	(MailingCity: payload.address.city) if (not isEmpty(payload.address.city)),
+	(MailingPostalCode: payload.address.zip_code) if (not isEmpty(payload.address.zip_code)),
+	(MailingState: payload.address.state) if (not isEmpty(payload.address.state)),
+	(MailingCountry: payload.address.country) if (not isEmpty(payload.address.country)),
+	(Phone: payload.phone) if (not isEmpty(payload.phone)),
+	(Email: payload.email) if (not isEmpty(payload.email))
+	
+}]]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<salesforce:create doc:name="Create Contact" type="Contact" doc:id="399bd2d0-326e-4a18-8ef2-fe13a00ae009" config-ref="Salesforce_Config1"/>
+		<logger level="INFO" doc:name="logResponse" doc:id="7efc8097-c1db-47c9-b882-a6a4575b5798" message="#[output application/json --- payload]" category="org.bankingApi.postContactFlow"/>
+		<choice doc:name="isRecordCreatedSuccessfully?" doc:id="e899ef4e-2d45-483b-9264-6a230a719fb5" >
+			<when expression="payload.successful == true">
+				<ee:transform doc:name="Creating JSON response" doc:id="be57f064-84c0-4ddf-827f-3114f8dca3d0">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  message: "Contact created successfully",
+  id: payload.items.id[0]
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Create Error Response" doc:id="a5bcbe3d-ad10-4b0d-afd0-a07963fc3cf7">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  message: "Contact could not be created",
+  error: payload.items.statusCode
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="putContactFlow" doc:id="7031b7e8-ffcc-4f55-82ae-8f194e9a38aa" >
+		<ee:transform doc:name="savePayload" doc:id="8d5730a4-9060-40f1-bbd5-2cb7e9ba2c54" >
+			<ee:message >				
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="updatedContact" ><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<salesforce:query doc:name="Query Contact Id by Email" doc:id="54dfac33-e31a-4fa4-98d3-387c9640d77e" config-ref="Salesforce_Config1">
+			<salesforce:salesforce-query ><![CDATA[SELECT Id FROM Contact WHERE Email =
+				':Email' Limit 1]]></salesforce:salesforce-query>
+			<salesforce:parameters ><![CDATA[#[output applicaton/java
+---
+{
+	"Email" : attributes.queryParams.email
+}]]]></salesforce:parameters>
+		</salesforce:query>
+		<choice doc:name="doesRecordExist?" doc:id="0b8b6152-3349-46d3-a01e-c6b40518b1d3" >
+			<when expression="#[sizeOf(payload) != 0]">
+				<ee:transform doc:name="mapRequestData" doc:id="b89f77b4-6592-4049-af6c-af47b8bead64" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+[{	
+	Id: payload.Id[0],
+	FirstName: if (not isEmpty(vars.updatedContact.first_name)) vars.updatedContact.first_name else "",
+	LastName: if (not isEmpty(vars.updatedContact.last_name)) vars.updatedContact.last_name else "",
+	MailingStreet: if (not isEmpty(vars.updatedContact.address.address_line_1)) vars.updatedContact.address.address_line_1 else "",
+	MailingCity: if (not isEmpty(vars.updatedContact.address.city)) vars.updatedContact.address.city else "",
+	MailingPostalCode:  if (not isEmpty(vars.updatedContact.address.zip_code)) vars.updatedContact.address.zip_code else "",
+	MailingState:  if (not isEmpty(vars.updatedContact.address.state)) vars.updatedContact.address.state else "",
+	MailingCountry: if (not isEmpty(vars.updatedContact.address.country)) vars.updatedContact.address.country else "",
+	Phone: if (not isEmpty(vars.updatedContact.phone)) vars.updatedContact.phone else ""
+	
+}]]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<salesforce:update doc:name="Update Contact" doc:id="71b9a4af-5e9d-49c7-9f0e-361e897732bf" config-ref="Salesforce_Config1" type="Contact"/>
+				<logger level="INFO" doc:name="logResponse" doc:id="50372317-630c-4391-890c-41c95a5c4bb3" message="#[output application/json --- payload]" category="org.bankingAPI.putContactFlow"/>
+				<ee:transform doc:name="Create JSON Response" doc:id="d1462d9f-6206-4143-b7ef-d327494ef7bb" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  message: if(isEmpty(payload.errors))"Contact was updated" else payload.errors,
+  id: payload.items.id[0]
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Create Error Response" doc:id="19fedc90-bc55-4c6d-82e0-8dddd9ae4ab5" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  message: "Record not found"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="deleteContactFlow" doc:id="680fd254-5540-476b-8463-c2c4c232296a" >
+		<salesforce:query doc:name="Query Contact Id by Email" doc:id="76aeff7a-0b44-492d-93a3-8824770d90a7" config-ref="Salesforce_Config1">
+			<salesforce:salesforce-query ><![CDATA[SELECT Id FROM Contact WHERE Email =
+				':Email' Limit 1]]></salesforce:salesforce-query>
+			<salesforce:parameters ><![CDATA[#[output applicaton/java
+---
+{
+	"Email" : attributes.queryParams.email
+}]]]></salesforce:parameters>
+		</salesforce:query>
+		<choice doc:name="doesRecordExist?" doc:id="baede2bc-b8cb-469f-8e0f-03f4c92ff7e0" >
+			<when expression="#[sizeOf(payload) != 0]">
+				<logger level="INFO" doc:name="logContactDetails" doc:id="16fd2ab4-ae48-4a95-a83f-2f9756fd4623" message='Contact to delete: Id: #[payload.Id], Type: #[payload."type"] ' category="org.bankingAPI.deleteContactFlow"/>
+				<salesforce:delete doc:name="Delete Contact" doc:id="7598938b-cbb0-4f59-a344-84cfe3a92ca5" config-ref="Salesforce_Config1">
+					<salesforce:ids ><![CDATA[#[payload.Id]]]></salesforce:ids>
+				</salesforce:delete>
+				<ee:transform doc:name="Creating JSON response" doc:id="75e0149e-c38e-4a34-8296-178892d123cf" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  message: "Successfully deleted",
+  id: payload.items.id[0]
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Create Error Response" doc:id="229fb3ac-720c-4c9c-af3d-20676365df25" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  message: "Record not found"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+</mule>
